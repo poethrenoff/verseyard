@@ -5,5 +5,4 @@
 .junie
 .ruff_cache
 __pycache__
-AGENTS.md
 docker-compose.yml

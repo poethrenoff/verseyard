@@ -8,6 +8,10 @@ x-defaults: &environment-defaults
     SECRET_KEY: ${SECRET_KEY}
     POSTGRES_DSN: ${POSTGRES_DSN}
     REDIS_DSN: ${REDIS_DSN}
+    JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+    JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+    JWT_PASSPHRASE: ${JWT_PASSPHRASE}
+    JWT_TOKEN_TTL: ${JWT_TOKEN_TTL}
 
 services:
   web:

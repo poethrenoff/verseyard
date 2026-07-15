@@ -1,0 +1,62 @@
+x-build: &docker-build-defaults
+  context: ./
+  dockerfile: ./docker/Dockerfile
+
+x-defaults: &environment-defaults
+  environment:
+    APP_ENV: ${APP_ENV}
+    SECRET_KEY: ${SECRET_KEY}
+    POSTGRES_DSN: ${POSTGRES_DSN}
+    REDIS_DSN: ${REDIS_DSN}
+
+services:
+  web:
+    build:
+      <<: *docker-build-defaults
+      target: nginx-image
+    ports:
+      - "80:80"
+
+  django:
+    build:
+      <<: *docker-build-defaults
+      target: django-image
+    <<: *environment-defaults
+    command: >
+        bash -c "
+            uv run manage.py migrate
+            uv run manage.py loaddata admins schedules
+            uv run gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 5
+        "
+
+  celery_beat:
+    build:
+      <<: *docker-build-defaults
+      target: python-image
+    <<: *environment-defaults
+    command: >
+        bash -c "
+            until uv run manage.py migrate --check; do sleep 3; done;
+            uv run celery -A config beat -l INFO
+        "
+
+  celery_worker:
+    build:
+      <<: *docker-build-defaults
+      target: python-image
+    <<: *environment-defaults
+    command: >
+        bash -c "
+            until uv run manage.py migrate --check; do sleep 3; done;
+            uv run celery -A config worker -l INFO
+        "
+
+  db:
+    image: pgvector/pgvector:0.8.5-pg18
+    environment:
+      - POSTGRES_DB=verseyard
+      - POSTGRES_USER=verseyard
+      - POSTGRES_PASSWORD=verseyard
+
+  redis:
+    image: redis:8.8.0-alpine3.23

@@ -1,2 +1,5 @@
-# verseyard
-Verse yard
+# Verse yard
+
+## Документация API
+
+- [Auth API](docs/auth-api.md) — аутентификация, обновление токена, информация об авторе.

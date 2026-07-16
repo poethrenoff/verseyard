@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from app.models.author import Author
+from app.models.poem import Poem
 
 
 class AuthorSerializer(serializers.ModelSerializer):
@@ -20,3 +21,31 @@ class LoginSerializer(serializers.Serializer):
 
 class TokenRefreshSerializer(serializers.Serializer):
     refresh_token = serializers.CharField()
+
+
+class PoemCreateSerializer(serializers.Serializer):
+    content = serializers.CharField(trim_whitespace=False)
+    title = serializers.CharField(required=False, allow_blank=True, default="")
+    comment = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class PoemUpdateSerializer(serializers.Serializer):
+    title = serializers.CharField(required=False, allow_blank=True)
+    content = serializers.CharField(required=False, trim_whitespace=False)
+    comment = serializers.CharField(required=False, allow_blank=True)
+
+
+class PoemListQuerySerializer(serializers.Serializer):
+    collection = serializers.IntegerField(required=False, allow_null=True, default=None)
+    query = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class PoemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Poem
+        fields = [
+            "id",
+            "title",
+            "content",
+            "comment",
+        ]

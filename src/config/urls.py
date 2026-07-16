@@ -20,7 +20,10 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+from app.views.frontend import FrontendView
+
 urlpatterns = [
+    path("", FrontendView.as_view(), name="frontend"),
     path(
         "admin/docs/",
         staff_member_required(SpectacularSwaggerView.as_view(url_name="schema")),

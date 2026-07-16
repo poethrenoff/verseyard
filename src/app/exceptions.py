@@ -170,3 +170,11 @@ class AccessDeniedError(Exception):
 
     def __str__(self, *args, **kwargs):
         return "Access denied"
+
+
+class PoemNotFoundError(Exception):
+    CODE = 404
+    TYPE = "PoemNotFoundError"
+
+    def __str__(self, *args, **kwargs):
+        return "Poem not found"

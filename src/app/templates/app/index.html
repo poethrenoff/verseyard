@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Участок</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+</head>
+<body>
+<div class="container" x-data="app()" x-cloak>
+
+    <nav class="nav">
+        <span class="brand">Участок</span>
+        <template x-if="access">
+            <span class="nav-links">
+                <button :class="{active: currentScreen === 'poems'}" @click="navigateTo('poems')">Стихи</button>
+                <button class="logout" @click="logout()">Выйти</button>
+            </span>
+        </template>
+    </nav>
+
+    <!-- DASHBOARD PANEL -->
+    <template x-if="access">
+        <aside class="dashboard-panel" x-show="dashboardLoaded">
+            <div class="dash-stat">
+                <span class="dash-value" x-text="inCollection"></span>
+                <span class="dash-label">в коллекции</span>
+            </div>
+            <div class="dash-stat">
+                <span class="dash-value" x-text="uncategorized"></span>
+                <span class="dash-label">вне коллекций</span>
+            </div>
+            <div class="dash-stat">
+                <span class="dash-value" x-text="remaining"></span>
+                <span class="dash-label">осталось до 100 000</span>
+            </div>
+        </aside>
+    </template>
+
+    <!-- LOGIN -->
+    <section x-show="currentScreen === 'login'" class="screen" x-transition>
+        <h1>Вход</h1>
+        <form @submit.prevent="login()" class="form">
+            <label>Email<input type="email" x-model="email" required></label>
+            <label>Пароль<input type="password" x-model="password" required></label>
+            <p class="error" x-show="loginError" x-text="loginError"></p>
+            <button type="submit">Войти</button>
+        </form>
+    </section>
+
+    <!-- POEMS -->
+    <section x-show="currentScreen === 'poems'" class="screen" x-transition>
+        <h1 x-text="editingId ? 'Редактирование стиха' : 'Добавление стиха'"></h1>
+        <form @submit.prevent="editingId ? updatePoem() : createPoem()" class="form">
+            <label>Заголовок<input type="text" x-model="newTitle"></label>
+            <label>Текст стиха
+                <textarea x-model="newContent" rows="16" required spellcheck="true"></textarea>
+            </label>
+            <label>Комментарий<input type="text" x-model="newComment"></label>
+            <p class="error" x-show="poemError" x-text="poemError"></p>
+            <div class="form-actions">
+                <button type="submit" :disabled="saving"><span x-text="saving ? 'Сохранение…' : (editingId ? 'Сохранить' : 'Сохранить')"></span></button>
+                <button type="button" x-show="editingId" @click="cancelEdit()" class="secondary">Отменить</button>
+            </div>
+        </form>
+
+        <div class="list">
+            <template x-for="poem in poems" :key="poem.id">
+                <article class="card">
+                    <h2 x-text="poem.title && /^&quot;.+\.\.\.&quot;$/.test(poem.title) ? '* * *' : poem.title"></h2>
+                    <pre x-text="poem.content"></pre>
+                    <p class="comment" x-text="poem.comment"></p>
+                    <button class="edit-btn" @click="startEdit(poem)">Редактировать</button>
+                </article>
+            </template>
+            <p x-show="poems.length === 0 && !loading">Стихов пока нет.</p>
+        </div>
+
+        <div class="pagination" x-show="poems.length > 0">
+            <button :disabled="!prevUrl" @click="goPrev()">Назад</button>
+            <button :disabled="!nextUrl" @click="goNext()">Вперёд</button>
+        </div>
+    </section>
+
+</div>
+
+<script>
+function app() {
+    return {
+        access: localStorage.getItem("access"),
+        refresh_token: localStorage.getItem("refresh_token"),
+        currentScreen: "login",
+        email: "",
+        password: "",
+        loginError: "",
+        newContent: "",
+        newTitle: "",
+        newComment: "",
+        poemError: "",
+        saving: false,
+        editingId: null,
+        poems: [],
+        loading: false,
+        nextUrl: null,
+        prevUrl: null,
+        remaining: 0,
+        inCollection: 0,
+        uncategorized: 0,
+        dashboardLoaded: false,
+
+        init() {
+            if (this.access) {
+                this.loadDashboard();
+                this.navigateTo("poems");
+            } else {
+                this.currentScreen = "login";
+            }
+        },
+
+        async loadDashboard() {
+            const response = await this.api("/api/poems/stats/", {headers: {"Content-Type": "application/json"}});
+            if (!response) return;
+            const data = await response.json();
+            this.inCollection = data.in_collection || 0;
+            this.uncategorized = data.uncategorized || 0;
+            this.remaining = data.remaining || 0;
+            this.dashboardLoaded = true;
+        },
+
+        async api(url, options = {}) {
+            options.headers = options.headers || {};
+            if (this.access) {
+                options.headers["Authorization"] = "Bearer " + this.access;
+            }
+            let response = await fetch(url, options);
+            if (response.status === 401 && this.refresh_token) {
+                const refreshed = await this.doRefresh();
+                if (refreshed) {
+                    options.headers["Authorization"] = "Bearer " + this.access;
+                    response = await fetch(url, options);
+                } else {
+                    this.logout();
+                    return null;
+                }
+            }
+            return response;
+        },
+
+        async doRefresh() {
+            try {
+                const response = await fetch("/api/auth/token/refresh/", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({refresh_token: this.refresh_token}),
+                });
+                if (!response.ok) return false;
+                const data = await response.json();
+                this.access = data.token;
+                this.refresh_token = data.refresh_token;
+                localStorage.setItem("access", this.access);
+                localStorage.setItem("refresh_token", this.refresh_token);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        },
+
+        navigateTo(screen) {
+            this.currentScreen = screen;
+            if (screen === "poems") this.loadPoems();
+        },
+
+        async login() {
+            this.loginError = "";
+            const response = await fetch("/api/auth/login/", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({email: this.email, password: this.password}),
+            });
+            if (!response.ok) {
+                const data = await response.json();
+                this.loginError = data.error ? data.error.message : "Ошибка входа";
+                return;
+            }
+            const data = await response.json();
+            this.access = data.token;
+            this.refresh_token = data.refresh_token;
+            localStorage.setItem("access", this.access);
+            localStorage.setItem("refresh_token", this.refresh_token);
+            this.loadDashboard();
+            this.navigateTo("poems");
+        },
+
+        logout() {
+            localStorage.clear();
+            this.access = null;
+            this.refresh_token = null;
+            this.currentScreen = "login";
+            this.dashboardLoaded = false;
+        },
+
+        async loadPoems(url) {
+            this.loading = true;
+            const target = url || "/api/poems/";
+            const response = await this.api(target, {headers: {"Content-Type": "application/json"}});
+            this.loading = false;
+            if (!response) return;
+            const data = await response.json();
+            this.poems = data.results || [];
+            this.nextUrl = data.next;
+            this.prevUrl = data.previous;
+        },
+
+        goNext() {
+            if (this.nextUrl) this.loadPoems(this.nextUrl);
+        },
+
+        goPrev() {
+            if (this.prevUrl) this.loadPoems(this.prevUrl);
+        },
+
+        async createPoem() {
+            this.poemError = "";
+            this.saving = true;
+            const response = await this.api("/api/poems/", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    content: this.newContent,
+                    title: this.newTitle,
+                    comment: this.newComment,
+                }),
+            });
+            this.saving = false;
+            if (!response) return;
+            if (!response.ok) {
+                const data = await response.json();
+                this.poemError = data.error ? data.error.message : "Ошибка сохранения";
+                return;
+            }
+            this.newContent = "";
+            this.newTitle = "";
+            this.newComment = "";
+            this.loadPoems();
+            this.loadDashboard();
+        },
+
+        startEdit(poem) {
+            this.editingId = poem.id;
+            this.newTitle = poem.title || "";
+            this.newContent = poem.content || "";
+            this.newComment = poem.comment || "";
+            this.poemError = "";
+            window.scrollTo({top: 0, behavior: "smooth"});
+        },
+
+        cancelEdit() {
+            this.editingId = null;
+            this.newTitle = "";
+            this.newContent = "";
+            this.newComment = "";
+            this.poemError = "";
+        },
+
+        async updatePoem() {
+            this.poemError = "";
+            this.saving = true;
+            const response = await this.api("/api/poems/" + this.editingId + "/", {
+                method: "PATCH",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    content: this.newContent,
+                    title: this.newTitle,
+                    comment: this.newComment,
+                }),
+            });
+            this.saving = false;
+            if (!response) return;
+            if (!response.ok) {
+                const data = await response.json();
+                this.poemError = data.error ? data.error.message : "Ошибка сохранения";
+                return;
+            }
+            this.cancelEdit();
+            this.loadPoems();
+            this.loadDashboard();
+        },
+    };
+}
+</script>
+</body>
+</html>

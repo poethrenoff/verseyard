@@ -19,12 +19,6 @@ class TaskStatusView(APIView):
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "properties": {
-                                "id": {"type": "integer"},
-                                "title": {"type": "string"},
-                                "comment": {"type": "string"},
-                                "similarity": {"type": "number"},
-                            },
                         },
                     },
                     "message": {"type": "string"},

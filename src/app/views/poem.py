@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.db.models import Max, Q
+from django.db.models import Avg, Max, Q
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework.pagination import PageNumberPagination
@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from app.exceptions import InvalidFormError
+from app.models.assessment import PoemAssessment
 from app.models.poem import Poem
 from app.serializers import (
     PoemCreateSerializer,
@@ -14,7 +15,7 @@ from app.serializers import (
     PoemSerializer,
     PoemUpdateSerializer,
 )
-from app.tasks import embed_poem
+from app.tasks import assess_poem, embed_poem
 from app.utils.poem import derive_comment, derive_title, normalize_content
 
 
@@ -57,6 +58,7 @@ class PoemListCreateView(PoemBaseView):
         )
 
         embed_poem.apply_async(args=[poem.id], queue=settings.EMBEDDING_QUEUE)
+        assess_poem.apply_async(args=[poem.id], queue=settings.CELERY_DEFAULT_QUEUE)
 
         return Response(PoemSerializer(poem).data, status=201)
 
@@ -96,6 +98,17 @@ class PoemStatsView(PoemBaseView):
                     "in_collection": {"type": "integer"},
                     "uncategorized": {"type": "integer"},
                     "remaining": {"type": "integer"},
+                    "avg_scores": {
+                        "type": "object",
+                        "properties": {
+                            "freshness": {"type": "number", "nullable": True},
+                            "emotional_density": {"type": "number", "nullable": True},
+                            "voice": {"type": "number", "nullable": True},
+                            "completeness": {"type": "number", "nullable": True},
+                            "anti_repeat": {"type": "number", "nullable": True},
+                        },
+                    },
+                    "count_assessed": {"type": "integer"},
                 },
             }
         },
@@ -106,11 +119,23 @@ class PoemStatsView(PoemBaseView):
         in_collection = active_poems.filter(collection__isnull=False).count()
         uncategorized = active_poems.filter(collection__isnull=True).count()
         total = in_collection + uncategorized
+
+        avg_scores = PoemAssessment.objects.filter(poem__author=request.user, poem__active=True).aggregate(
+            freshness=Avg("freshness"),
+            emotional_density=Avg("emotional_density"),
+            voice=Avg("voice"),
+            completeness=Avg("completeness"),
+            anti_repeat=Avg("anti_repeat"),
+        )
+        count_assessed = PoemAssessment.objects.filter(poem__author=request.user, poem__active=True).count()
+
         return Response(
             {
                 "in_collection": in_collection,
                 "uncategorized": uncategorized,
                 "remaining": max(0, 100000 - total),
+                "avg_scores": avg_scores,
+                "count_assessed": count_assessed,
             }
         )
 
@@ -137,5 +162,6 @@ class PoemDetailView(PoemBaseView):
         poem.save()
 
         embed_poem.apply_async(args=[poem.id], queue=settings.EMBEDDING_QUEUE)
+        assess_poem.apply_async(args=[poem.id], queue=settings.CELERY_DEFAULT_QUEUE)
 
         return Response(PoemSerializer(poem).data, status=200)

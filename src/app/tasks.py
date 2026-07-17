@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Any
 
 from celery import shared_task
 from django.conf import settings
@@ -12,6 +13,38 @@ def refresh_token_cleanup() -> None:
     RefreshToken.objects.filter(
         created_at__lte=timezone.now() - timedelta(seconds=settings.REFRESH_TOKEN_EXPIRES)
     ).delete()
+
+
+@shared_task(
+    autoretry_for=(Exception,),
+    max_retries=3,
+    default_retry_delay=30,
+)
+def assess_poem(poem_id: int) -> dict[str, dict[str, Any] | Any]:
+    from app.models.assessment import PoemAssessment
+    from app.models.poem import Poem
+    from app.utils.assessment import anti_repeat_score
+    from app.utils.llm import assess
+
+    poem = Poem.objects.get(id=poem_id)
+
+    scores = assess(poem.content)
+    scores["anti_repeat"] = anti_repeat_score(poem)
+    scores["model_name"] = settings.LLM_MODEL_NAME or ""
+
+    PoemAssessment.objects.update_or_create(poem=poem, defaults=scores)
+
+    return {
+        "scores": {
+            "freshness": scores["freshness"],
+            "emotional_density": scores["emotional_density"],
+            "voice": scores["voice"],
+            "completeness": scores["completeness"],
+            "anti_repeat": scores["anti_repeat"],
+        },
+        "comment": scores["comment"],
+        "model_name": scores["model_name"],
+    }
 
 
 @shared_task(

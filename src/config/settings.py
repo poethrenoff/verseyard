@@ -197,8 +197,13 @@ REFRESH_TOKEN_EXPIRES = 7 * 24 * 60 * 60
 
 EMBEDDING_QUEUE = "embeddings"
 EMBEDDING_MODEL_NAME = "BAAI/bge-m3"
-FENCE_SIMILARITY_THRESHOLD = 0.76
-FENCE_SIMILARITY_LIMIT = 5
+SIMILARITY_THRESHOLD = 0.76
+SIMILARITY_LIMIT = 5
+
+LLM_API_URL = os.getenv("LLM_API_URL")
+LLM_API_KEY = os.getenv("LLM_API_KEY")
+LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME")
+
 
 # Celery Configuration Options
 CELERY_TIMEZONE = TIME_ZONE
@@ -211,6 +216,8 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_BROKER_CONNECTION_RETRY = True
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_WORKER_CANCEL_LONG_RUNNING_TASKS_ON_CONNECTION_LOSS = True
+
+CELERY_DEFAULT_QUEUE = "celery"
 
 # Route embedding tasks to a dedicated embeddings queue so they run only on
 # workers that have the ML dependencies installed (embeddings-image).

@@ -93,11 +93,11 @@ class PoemAPITest(TestCase):
         results = response.json()["results"]
         self.assertEqual(len(results), 1)
 
-    def test_patch_updates_and_normalizes_content(self):
+    def test_put_updates_and_normalizes_content(self):
         self._auth(self.author)
         created = self.client.post(reverse("poem-list"), {"content": "orig", "title": "Keep"}, format="json")
         pk = created.json()["id"]
-        response = self.client.patch(
+        response = self.client.put(
             reverse("poem-update", args=[pk]), {"content": "  new content here.  "}, format="json"
         )
         self.assertEqual(response.status_code, 200)
@@ -105,11 +105,11 @@ class PoemAPITest(TestCase):
         self.assertEqual(data["content"], "  new content here.")
         self.assertEqual(data["title"], '"new content here..."')
 
-    def test_patch_derives_title_and_comment_when_omitted(self):
+    def test_put_derives_title_and_comment_when_omitted(self):
         self._auth(self.author)
         created = self.client.post(reverse("poem-list"), {"content": "Стих для пересчёта."}, format="json")
         pk = created.json()["id"]
-        response = self.client.patch(
+        response = self.client.put(
             reverse("poem-update", args=[pk]), {"content": "Другой текст стиха.  "}, format="json"
         )
         self.assertEqual(response.status_code, 200)
@@ -118,11 +118,11 @@ class PoemAPITest(TestCase):
         self.assertEqual(data["title"], '"Другой текст стиха..."')
         self.assertEqual(data["comment"], timezone.localdate().strftime("%d.%m.%Y"))
 
-    def test_patch_keeps_explicit_title_and_comment(self):
+    def test_put_keeps_explicit_title_and_comment(self):
         self._auth(self.author)
         created = self.client.post(reverse("poem-list"), {"content": "исходный"}, format="json")
         pk = created.json()["id"]
-        response = self.client.patch(
+        response = self.client.put(
             reverse("poem-update", args=[pk]),
             {"content": "изменённый текст.", "title": "Свой заголовок", "comment": "Свой коммент"},
             format="json",
@@ -131,13 +131,13 @@ class PoemAPITest(TestCase):
         self.assertEqual(data["title"], "Свой заголовок")
         self.assertEqual(data["comment"], "Свой коммент")
 
-    def test_patch_isolation_404_for_other_author(self):
+    def test_put_isolation_404_for_other_author(self):
         self._auth(self.author)
         created = self.client.post(reverse("poem-list"), {"content": "mine"}, format="json")
         pk = created.json()["id"]
 
         self._auth(self.other)
-        response = self.client.patch(reverse("poem-update", args=[pk]), {"content": "hack"}, format="json")
+        response = self.client.put(reverse("poem-update", args=[pk]), {"content": "hack"}, format="json")
         self.assertEqual(response.status_code, 404)
 
     def test_unauthorized_returns_401(self):

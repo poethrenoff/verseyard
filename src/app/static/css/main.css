@@ -223,13 +223,13 @@ body {
     color: var(--muted);
 }
 
-.fence-status {
+.similar-status {
     color: var(--muted);
     font-style: italic;
     margin: 12px 0 0;
 }
 
-.fence-warning {
+.similar-warning {
     margin: 12px 0 0;
     padding: 14px 18px;
     border: 1px solid var(--border);
@@ -238,17 +238,61 @@ body {
     background: var(--card);
 }
 
-.fence-title {
+.similar-title {
     margin: 0 0 8px;
     font-weight: 600;
 }
 
-.fence-warning ul {
+.similar-warning ul {
     margin: 0 0 10px;
     padding-left: 20px;
 }
 
-.fence-sim {
+.similar-sim {
     color: var(--muted);
     font-size: 13px;
+}
+
+.assess-status {
+    color: var(--muted);
+    font-style: italic;
+    margin: 12px 0 0;
+}
+
+.assess-block {
+    margin: 12px 0 0;
+    padding: 14px 18px;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent-2, var(--accent));
+    border-radius: 10px;
+    background: var(--card);
+}
+
+.assess-title {
+    margin: 0 0 8px;
+    font-weight: 600;
+}
+
+.assess-scores {
+    list-style: none;
+    margin: 0 0 10px;
+    padding: 0;
+}
+
+.assess-scores li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 3px 0;
+    border-bottom: 1px dashed var(--border);
+}
+
+.assess-scores b {
+    font-variant-numeric: tabular-nums;
+}
+
+.assess-comment {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-style: italic;
 }

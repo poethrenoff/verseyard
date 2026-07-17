@@ -35,6 +35,12 @@
                 <span class="dash-value" x-text="remaining"></span>
                 <span class="dash-label">осталось до 100 000</span>
             </div>
+            <template x-if="avgScores">
+                <div class="dash-stat">
+                    <span class="dash-value" x-text="(avgScores.freshness ?? 0).toFixed(1)"></span>
+                    <span class="dash-label">средняя свежесть</span>
+                </div>
+            </template>
         </aside>
     </template>
 
@@ -66,20 +72,38 @@
         </form>
 
         <template x-if="similarStatus === 'pending'">
-            <p class="fence-status">Забор проверяет похожие стихи…</p>
+            <p class="similar-status">Забор проверяет похожие стихи…</p>
         </template>
         <template x-if="similarList.length > 0">
-            <div class="fence-warning">
-                <p class="fence-title">Похоже на уже написанное — но перелезть через Забор можно:</p>
+            <div class="similar-warning">
+                <p class="similar-title">Похоже на уже написанное — но перелезть через Забор можно:</p>
                 <ul>
                     <template x-for="item in similarList" :key="item.id">
                         <li>
                             <span x-text="item.id + '. ' + item.title"></span>
-                            <span class="fence-sim" x-text="' — ' + Math.round(item.similarity * 100) + '%'"></span>
+                            <span class="similar-sim" x-text="' — ' + Math.round(item.similarity * 100) + '%'"></span>
                         </li>
                     </template>
                 </ul>
-                <button type="button" class="secondary" @click="dismissFence()">Закрыть</button>
+                <button type="button" class="secondary" @click="dismissSimilar()">Закрыть</button>
+            </div>
+        </template>
+
+        <template x-if="assessmentStatus === 'pending'">
+            <p class="assess-status">Петрович присматривается к стиху…</p>
+        </template>
+        <template x-if="assessmentStatus === 'ready' && assessmentScores">
+            <div class="assess-block">
+                <p class="assess-title">Оценка стиха:</p>
+                <ul class="assess-scores">
+                    <li><span>Свежесть образа: </span><b x-text="assessmentScores.freshness ?? '—'"></b></li>
+                    <li><span>Эмоциональная плотность: </span><b x-text="assessmentScores.emotional_density ?? '—'"></b></li>
+                    <li><span>Голос: </span><b x-text="assessmentScores.voice ?? '—'"></b></li>
+                    <li><span>Завершённость: </span><b x-text="assessmentScores.completeness ?? '—'"></b></li>
+                    <li><span>Анти-повтор: </span><b x-text="assessmentScores.anti_repeat ?? '—'"></b></li>
+                </ul>
+                <p class="assess-comment" x-text="assessmentComment"></p>
+                <button type="button" class="secondary" @click="dismissAssessment()">Закрыть</button>
             </div>
         </template>
 
@@ -131,6 +155,13 @@ function app() {
         similarError: "",
         _similarTimer: null,
         _similarAttempts: 0,
+        assessmentStatus: null,
+        assessmentScores: null,
+        assessmentComment: "",
+        assessmentModel: "",
+        _assessmentTimer: null,
+        _assessmentAttempts: 0,
+        avgScores: null,
 
         init() {
             if (this.access) {
@@ -148,6 +179,7 @@ function app() {
             this.inCollection = data.in_collection || 0;
             this.uncategorized = data.uncategorized || 0;
             this.remaining = data.remaining || 0;
+            this.avgScores = data.avg_scores || null;
             this.dashboardLoaded = true;
         },
 
@@ -269,6 +301,7 @@ function app() {
             this.loadPoems();
             this.loadDashboard();
             this.pollSimilar(data.id);
+            this.pollAssessment(data.id);
         },
 
         startEdit(poem) {
@@ -312,6 +345,7 @@ function app() {
             this.loadPoems();
             this.loadDashboard();
             this.pollSimilar(editedId);
+            this.pollAssessment(editedId);
         },
 
         async pollSimilar(id) {
@@ -365,9 +399,69 @@ function app() {
             tick();
         },
 
-        dismissFence() {
+        dismissSimilar() {
             this.similarList = [];
             this.similarStatus = null;
+        },
+
+        async pollAssessment(id) {
+            this.assessmentStatus = "pending";
+            this.assessmentScores = null;
+            this.assessmentComment = "";
+            this.assessmentModel = "";
+            this._assessmentAttempts = 0;
+            if (this._assessmentTimer) clearTimeout(this._assessmentTimer);
+
+            const startResponse = await this.api("/api/poems/" + id + "/assessment/", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+            });
+            if (!startResponse || !startResponse.ok) {
+                this.assessmentStatus = null;
+                return;
+            }
+            const startData = await startResponse.json();
+            const taskId = startData.task_id;
+            if (!taskId) {
+                this.assessmentStatus = null;
+                return;
+            }
+
+            const tick = async () => {
+                this._assessmentAttempts += 1;
+                const response = await this.api("/api/tasks/" + taskId + "/", {
+                    headers: {"Content-Type": "application/json"},
+                });
+                if (!response || !response.ok) {
+                    this.assessmentStatus = null;
+                    return;
+                }
+                const data = await response.json();
+                if (data.status === "ready") {
+                    this.assessmentStatus = "ready";
+                    this.assessmentScores = data.result ? (data.result.scores || null) : null;
+                    this.assessmentComment = data.result ? (data.result.comment || "") : "";
+                    this.assessmentModel = data.result ? (data.result.model_name || "") : "";
+                    this._assessmentTimer = null;
+                    return;
+                }
+                if (data.status === "error") {
+                    this.assessmentStatus = null;
+                    return;
+                }
+                if (this._assessmentAttempts >= 30) {
+                    this.assessmentStatus = null;
+                    return;
+                }
+                this._assessmentTimer = setTimeout(tick, 1000);
+            };
+            tick();
+        },
+
+        dismissAssessment() {
+            this.assessmentStatus = null;
+            this.assessmentScores = null;
+            this.assessmentComment = "";
         },
     }
 }

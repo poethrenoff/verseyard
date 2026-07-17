@@ -33,18 +33,20 @@
 - `GET /api/auth/info`: Получение информации о текущем авторе. Реализован в `src/app/views/auth.py`.
 - `GET /api/poems/`: Список стихов текущего автора с пагинацией. Реализован в `src/app/views/poem.py` (`PoemListCreateView.get`).
 - `POST /api/poems/`: Создание стиха. Реализован в `src/app/views/poem.py` (`PoemListCreateView.post`).
-- `GET /api/poems/stats/`: Статистика по активным стихам текущего автора. Реализован в `src/app/views/poem.py` (`PoemStatsView`).
-- `PUT /api/poems/<id>/`: Частичное обновление стиха (только автором). Реализован в `src/app/views/poem.py` (`PoemDetailView`).
-- `POST /api/poems/<id>/similar/`: Запуск асинхронной Celery-задачи `compute_poem_similarity`, возвращает `task_id`. Реализован в `src/app/views/fence.py` (`PoemSimilarView.post`).
+- `GET /api/poems/stats/`: Статистика по активным стихам текущего автора; расширен средними баллами оценки (`avg_scores`) и `count_assessed`. Реализован в `src/app/views/poem.py` (`PoemStatsView`).
+- `PUT /api/poems/<id>/`: Частичное обновление стиха (только автором). При смене `content` ставит пере-эмбеддинг и пере-оценку. Реализован в `src/app/views/poem.py` (`PoemDetailView`).
+- `POST /api/poems/<id>/assessment/`: Запуск асинхронной Celery-задачи оценки `assess_poem`, возвращает `task_id`. Реализован в `src/app/views/assessment.py` (`PoemAssessmentView.post`). Результат (5 шкал 0–10 + комментарий + `anti_repeat`) опрашивается через `GET /api/tasks/<task_id>/` (тот же двухфазный flow, что у «Забора»).
+- `POST /api/poems/<id>/similar/`: Запуск асинхронной Celery-задачи `compute_poem_similarity`, возвращает `task_id`. Реализован в `src/app/views/similar.py` (`PoemSimilarView.post`).
 - `GET /api/tasks/<task_id>/`: Статус асинхронной задачи (`pending`/`ready`+`result`/`error`+`message`). Реализован в `src/app/views/task.py` (`TaskStatusView`).
 - Задача `compute_poem_similarity` (`src/app/tasks.py`): ждёт готовности эмбеддинга (retry `countdown=2`, до 15 раз), затем вызывает `find_similar`. Фронт (`index.html`) использует двухфазный flow POST→poll `GET /api/tasks/<task_id>/` (до 30 попыток).
+- Задача `assess_poem(poem_id)` (`src/app/tasks.py`): асинхронно (очередь `celery`) вызывает LLM для 4 шкал (свежесть, эмоциональная плотность, голос, завершённость) и вычисляет `anti_repeat` из эмбеддинга; сохраняет `PoemAssessment` и возвращает `{"scores", "comment", "model_name"}` как результат задачи. Ставится при `POST`/`PUT` стиха рядом с `embed_poem`. Фронт (`index.html`) использует тот же двухфазный flow, что у «Забора»: `POST /api/poems/<id>/assessment/` → poll `GET /api/tasks/<task_id>/` (до 30 попыток), показывает неблокирующий блок с баллами.
 
 ## Архитектура «Забора» (семантический антиповтор, этап 2)
 
 - Модель эмбеддингов: `BAAI/bge-m3` (1024 измерения,
   L2-нормализация, поиск по `vector_cosine_ops` в pgvector). Модель выбрана как сильная мультиязычная,
   заметно лучше разделяющая похожие и непохожие русские тексты, чем `e5-base`/`paraphrase-multilingual-mpnet`.
-- Порог близости `FENCE_SIMILARITY_THRESHOLD` (по умолчанию `0.76`), топ-K `FENCE_SIMILARITY_LIMIT`
+- Порог близости `SIMILARITY_THRESHOLD` (по умолчанию `0.76`), топ-K `SIMILARITY_LIMIT`
   (по умолчанию `5`). Для `BAAI/bge-m3` распределение cosine-similarity по корпусу бимодально:
   масса пар в диапазоне 0.5–0.7 (тематически близкие, но разные стихи) и резкий обрыв после ~0.76
   (реальные вариации одного стиха, max ≈ 0.82). Порог 0.76 отсекает шум и оставляет только повторы.
@@ -65,6 +67,35 @@
 - При импорте этапа 0 (`import_poems`, `TRUNCATE app_poem, app_collection`) или **смене модели эмбеддингов**
   старые эмбеддинги становятся невалидными. Нужно заново заполнить корпус командой `backfill_embeddings`.
 
+## Архитектура «Оценки стихов» (5 шкал, этап 3)
+
+- Оценка — отдельная сущность `PoemAssessment` (`OneToOne` к `Poem`, таблица `app_poem_assessment`):
+  шкалы `freshness`, `emotional_density`, `voice`, `completeness`, `anti_repeat`
+  (`SmallIntegerField` 0–10, `null=True`) + `comment` (`TextField`) + `model_name`
+  (какую LLM-модель посчитал, для A/B). Миграция `0002_poemassessment`.
+- «Калибровка через сравнение» (концепт, раздел 9) реализована на дашборде: балл стиха
+  показывается относительно `avg_scores` из `GET /api/poems/stats/` (средние по автору),
+  без попарного сравнения в LLM.
+- LLM-бэкенд — **единый OpenAI-совместимый клиент** (`app/utils/llm.py`, SDK `openai`).
+  Переключение провайдера = смена env `LLM_API_URL` + `LLM_MODEL_NAME` (без нового кода):
+  OpenRouter (рекоменд. для A/B `:free`-моделей), Gemini 2.5 Flash, Groq/Cerebras, либо
+  локальный **Ollama** (`LLM_API_URL=http://localhost:11434/v1`, `LLM_API_KEY=ollama`) —
+  резерв под приватность концепта. Смена провайдера не требует правок модели/таска/эндпоинта.
+- Таск `assess_poem(poem_id)` идёт в **обычную очередь `celery`** (`settings.CELERY_DEFAULT_QUEUE`,
+  не `embeddings`): внешний LLM-API не требует тяжёлого `embeddings-image`. Импорт `openai` и
+  чтение ключа — лениво внутри `assess()`, чтобы старт воркера не требовал SDK/сети/ключа.
+- `anti_repeat` НЕ от LLM: считается в `app/utils/assessment.py` (`anti_repeat_score`) из
+  `PoemEmbedding` того же автора (топ-1 cosine-distance, маппинг `(1 - similarity) * 10`),
+  переиспользует «Забор». Если эмбеддинга нет — `null` (pending).
+- Фронт (`templates/app/index.html`): после создания/обновления опрашивает
+  `GET /api/poems/<id>/assessment/` раз в секунду (до 30 попыток) и показывает неблокирующий
+  блок с 5 баллами + комментарием; средние баллы (`avg_scores`) выведены на дашборде как ориентир.
+- ⚠️ **Приватность:** внешний LLM-API получает тексты стихов (отклонение от концепта, раздел 2/13/14).
+  Резерв — локальный Ollama через тот же клиент (только env).
+- При смене LLM-модели старые оценки не инвалидируются автоматически (поле `model_name` это
+  отражает); для переоценки корпуса таск `assess_poem` ставится повторно (аналог `backfill_embeddings`,
+  вне ядра).
+
 ## Команды
 
 - Тесты: `uv run src/manage.py test <label> --keepdb` (запускать из корня).
@@ -82,7 +113,11 @@
 - Локальный воркер очереди `embeddings`: `make worker-embeddings`
   (из корня; поднимает celery на очереди `embeddings`, concurrency 1, pool=solo,
   кэш весов в `.model_cache`). Обычный воркер: `make worker` (очередь `celery`).
-- Калибровка порога `FENCE_SIMILARITY_THRESHOLD`: `uv run src/manage.py find_similar_pairs`
+- Оценка стихов (этап 3) требует переменных окружения `LLM_API_URL`, `LLM_API_KEY`,
+  `LLM_MODEL_NAME` (см. `.env.dist`). Таск `assess_poem` идёт в обычную очередь `celery`
+  (воркер `make worker`); внешний LLM-API должен быть OpenAI-совместимым. Для A/B моделей
+  меняйте только `LLM_MODEL_NAME` (напр. через OpenRouter).
+- Калибровка порога `SIMILARITY_THRESHOLD`: `uv run src/manage.py find_similar_pairs`
   (опции `--author <id>`, `--neighbors`, `--top`, `--min`). Считает pairwise cosine-близость по всему
   корпусу (по авторам) и выводит распределение по корзинам + топ-N самых похожих пар. Запускать
   **на `embeddings-image`** (нужен только доступ к БД с эмбеддингами; torch не требуется, векторы

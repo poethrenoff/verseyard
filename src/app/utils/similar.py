@@ -35,13 +35,13 @@ def find_similar(poem: Poem) -> list[dict]:
         PoemEmbedding.objects.filter(poem__author=poem.author, poem__active=True)
         .exclude(poem_id=poem.id)
         .annotate(distance=CosineDistance("vector", target.vector))
-        .order_by("distance")[: settings.FENCE_SIMILARITY_LIMIT]
+        .order_by("distance")[: settings.SIMILARITY_LIMIT]
     )
 
     results = []
     for candidate in candidates:
         similarity = 1 - candidate.distance
-        if similarity < settings.FENCE_SIMILARITY_THRESHOLD:
+        if similarity < settings.SIMILARITY_THRESHOLD:
             continue
         results.append(
             {

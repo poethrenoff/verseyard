@@ -57,7 +57,7 @@ def embed_poem(poem_id: int) -> None:
     from app.models.poem_embedding import PoemEmbedding
 
     poem = Poem.objects.get(id=poem_id)
-    from app.utils.fence import encode
+    from app.utils.similar import encode
 
     (vector,) = encode([poem.content])
 
@@ -76,7 +76,7 @@ def embed_poem(poem_id: int) -> None:
 def compute_poem_similarity(self, poem_id: int):
     from app.models.poem import Poem
     from app.models.poem_embedding import PoemEmbedding
-    from app.utils.fence import find_similar
+    from app.utils.similar import find_similar
 
     poem = Poem.objects.get(id=poem_id)
 

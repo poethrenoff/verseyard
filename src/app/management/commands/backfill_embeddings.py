@@ -14,7 +14,7 @@ class Command(BaseCommand):
         parser.add_argument("--batch", type=int, default=32, help="Размер батча")
 
     def handle(self, *args, **options):
-        from app.utils.fence import encode
+        from app.utils.similar import encode
 
         author_id = options["author"]
         batch_size = options["batch"]

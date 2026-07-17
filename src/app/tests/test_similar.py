@@ -22,8 +22,8 @@ def _fake_encode(texts):
     return vectors
 
 
-@override_settings(FENCE_SIMILARITY_THRESHOLD=0.5, FENCE_SIMILARITY_LIMIT=5)
-class FenceTest(TestCase):
+@override_settings(SIMILARITY_THRESHOLD=0.5, SIMILARITY_LIMIT=5)
+class SimilarTest(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.password = "secret123"
@@ -44,7 +44,7 @@ class FenceTest(TestCase):
 
     def test_embed_poem_creates_embedding(self):
         poem = Poem.objects.create(author=self.author, title="t", content="similar text", comment="", active=True)
-        with patch("app.utils.fence.encode", side_effect=_fake_encode):
+        with patch("app.utils.similar.encode", side_effect=_fake_encode):
             embed_poem.run(poem.id)
         embedding = PoemEmbedding.objects.get(poem=poem)
         self.assertEqual(len(embedding.vector), 1024)
@@ -52,7 +52,7 @@ class FenceTest(TestCase):
 
     def test_embed_poem_is_idempotent_on_rerun(self):
         poem = Poem.objects.create(author=self.author, title="t", content="similar text", comment="", active=True)
-        with patch("app.utils.fence.encode", side_effect=_fake_encode):
+        with patch("app.utils.similar.encode", side_effect=_fake_encode):
             embed_poem.run(poem.id)
             embed_poem.run(poem.id)
         self.assertEqual(PoemEmbedding.objects.filter(poem=poem).count(), 1)
@@ -93,7 +93,7 @@ class FenceTest(TestCase):
         self._auth(self.author)
         target = Poem.objects.create(author=self.author, title="t", content="similar text", comment="", active=True)
         similar = Poem.objects.create(author=self.author, title="s", content="similar text", comment="c", active=True)
-        with patch("app.utils.fence.encode", side_effect=_fake_encode):
+        with patch("app.utils.similar.encode", side_effect=_fake_encode):
             for poem in (target, similar):
                 embed_poem.run(poem.id)
 

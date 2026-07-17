@@ -1,8 +1,9 @@
 from django.urls import path
 
+from app.views.assessment import PoemAssessmentView
 from app.views.auth import InfoView, LoginView, TokenRefreshView
-from app.views.fence import PoemSimilarView
 from app.views.poem import PoemDetailView, PoemListCreateView, PoemStatsView
+from app.views.similar import PoemSimilarView
 from app.views.task import TaskStatusView
 
 urlpatterns = [
@@ -13,5 +14,6 @@ urlpatterns = [
     path("poems/stats/", PoemStatsView.as_view(), name="poem-stats"),
     path("poems/<int:pk>/", PoemDetailView.as_view(), name="poem-update"),
     path("poems/<int:pk>/similar/", PoemSimilarView.as_view(), name="poem-similar"),
+    path("poems/<int:pk>/assessment/", PoemAssessmentView.as_view(), name="poem-assessment"),
     path("tasks/<str:task_id>/", TaskStatusView.as_view(), name="task-status"),
 ]

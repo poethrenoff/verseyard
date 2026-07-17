@@ -3,15 +3,14 @@ x-build: &docker-build-defaults
   dockerfile: ./docker/Dockerfile
 
 x-defaults: &environment-defaults
-  environment:
-    APP_ENV: ${APP_ENV}
-    SECRET_KEY: ${SECRET_KEY}
-    POSTGRES_DSN: ${POSTGRES_DSN}
-    REDIS_DSN: ${REDIS_DSN}
-    JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
-    JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
-    JWT_PASSPHRASE: ${JWT_PASSPHRASE}
-    JWT_TOKEN_TTL: ${JWT_TOKEN_TTL}
+  APP_ENV: ${APP_ENV}
+  SECRET_KEY: ${SECRET_KEY}
+  POSTGRES_DSN: ${POSTGRES_DSN}
+  REDIS_DSN: ${REDIS_DSN}
+  JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+  JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+  JWT_PASSPHRASE: ${JWT_PASSPHRASE}
+  JWT_TOKEN_TTL: ${JWT_TOKEN_TTL}
 
 services:
   web:
@@ -25,7 +24,8 @@ services:
     build:
       <<: *docker-build-defaults
       target: django-image
-    <<: *environment-defaults
+    environment:
+      <<: *environment-defaults
     command: >
         bash -c "
             uv run manage.py migrate
@@ -36,8 +36,9 @@ services:
   celery_beat:
     build:
       <<: *docker-build-defaults
-      target: python-image
-    <<: *environment-defaults
+      target: worker-image
+    environment:
+      <<: *environment-defaults
     command: >
         bash -c "
             until uv run manage.py migrate --check; do sleep 3; done;
@@ -47,12 +48,29 @@ services:
   celery_worker:
     build:
       <<: *docker-build-defaults
-      target: python-image
-    <<: *environment-defaults
+      target: worker-image
+    environment:
+      <<: *environment-defaults
     command: >
         bash -c "
             until uv run manage.py migrate --check; do sleep 3; done;
-            uv run celery -A config worker -l INFO
+            uv run celery -A config worker -Q celery -l INFO
+        "
+
+  celery_worker_embeddings:
+    build:
+      <<: *docker-build-defaults
+      target: embeddings-image
+    environment:
+      <<: *environment-defaults
+      HF_HOME: /app/model_cache
+      SENTENCE_TRANSFORMERS_HOME: /app/model_cache
+    volumes:
+      - model_cache:/app/model_cache
+    command: >
+        bash -c "
+            until uv run manage.py migrate --check; do sleep 3; done;
+            uv run celery -A config worker -Q embeddings -c 1 --pool=solo -l INFO
         "
 
   db:
@@ -64,3 +82,6 @@ services:
 
   redis:
     image: redis:8.8.0-alpine3.23
+
+volumes:
+  model_cache:

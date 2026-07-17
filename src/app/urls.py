@@ -1,6 +1,7 @@
 from django.urls import path
 
 from app.views.auth import InfoView, LoginView, TokenRefreshView
+from app.views.fence import PoemSimilarView
 from app.views.poem import PoemDetailView, PoemListCreateView, PoemStatsView
 
 urlpatterns = [
@@ -10,4 +11,5 @@ urlpatterns = [
     path("poems/", PoemListCreateView.as_view(), name="poem-list"),
     path("poems/stats/", PoemStatsView.as_view(), name="poem-stats"),
     path("poems/<int:pk>/", PoemDetailView.as_view(), name="poem-update"),
+    path("poems/<int:pk>/similar/", PoemSimilarView.as_view(), name="poem-similar"),
 ]

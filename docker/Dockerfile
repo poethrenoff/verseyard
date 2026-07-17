@@ -11,13 +11,22 @@ WORKDIR /app
 
 COPY ./pyproject.toml .
 COPY ./uv.lock .
-RUN uv sync
-
-COPY ./src .
 
 # Django image
 FROM python-image AS django-image
+RUN uv sync
 RUN uv run manage.py collectstatic --no-input
+COPY ./src .
+
+# Worker image
+FROM python-image AS worker-image
+RUN uv sync
+COPY ./src .
+
+# Embeddings image
+FROM python-image AS embeddings-image
+RUN uv sync --group embeddings
+COPY ./src .
 
 # Nginx image
 FROM nginx:1.31.0-alpine3.23 AS nginx-image

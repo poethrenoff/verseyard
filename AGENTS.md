@@ -34,7 +34,33 @@
 - `GET /api/poems/`: Список стихов текущего автора с пагинацией. Реализован в `src/app/views/poem.py` (`PoemListCreateView.get`).
 - `POST /api/poems/`: Создание стиха. Реализован в `src/app/views/poem.py` (`PoemListCreateView.post`).
 - `GET /api/poems/stats/`: Статистика по активным стихам текущего автора. Реализован в `src/app/views/poem.py` (`PoemStatsView`).
-- `PATCH /api/poems/<id>/`: Частичное обновление стиха (только автором). Реализован в `src/app/views/poem.py` (`PoemDetailView`).
+- `PUT /api/poems/<id>/`: Частичное обновление стиха (только автором). Реализован в `src/app/views/poem.py` (`PoemDetailView`).
+- `GET /api/poems/<id>/similar/`: Семантический антиповтор «Забор». Реализован в `src/app/views/fence.py` (`PoemSimilarView`).
+
+## Архитектура «Забора» (семантический антиповтор, этап 2)
+
+- Модель эмбеддингов: `BAAI/bge-m3` (1024 измерения,
+  L2-нормализация, поиск по `vector_cosine_ops` в pgvector). Модель выбрана как сильная мультиязычная,
+  заметно лучше разделяющая похожие и непохожие русские тексты, чем `e5-base`/`paraphrase-multilingual-mpnet`.
+- Порог близости `FENCE_SIMILARITY_THRESHOLD` (по умолчанию `0.76`), топ-K `FENCE_SIMILARITY_LIMIT`
+  (по умолчанию `5`). Для `BAAI/bge-m3` распределение cosine-similarity по корпусу бимодально:
+  масса пар в диапазоне 0.5–0.7 (тематически близкие, но разные стихи) и резкий обрыв после ~0.76
+  (реальные вариации одного стиха, max ≈ 0.82). Порог 0.76 отсекает шум и оставляет только повторы.
+  Для калибровки используйте команду `find_similar_pairs` (см. ниже).
+- Эмбеддинг считается **асинхронно** в отдельной Celery-очереди `embeddings` на тяжёлом
+  Docker-образе `embeddings-image` (торч/sentence-transformers — опциональная группа `embeddings` в
+  `pyproject.toml`, НЕ ставится в лёгкий образ). Обычные воркеры `celery_worker` привязаны к очереди
+  `celery`. Лёгкие воркеры и Django не импортируют torch/ST (ленивый импорт внутри таска
+  `app.tasks.embed_poem` и команды `backfill_embeddings`).
+- Таск `embed_poem(poem_id)` ставится при `POST`/`PUT` стиха (`app/views/poem.py`) и идемпотентно
+  пересчитывает вектор через `PoemEmbedding.update_or_create`.
+- Фронт (`templates/app/index.html`): после успешного создания/обновления опрашивает
+  `GET /api/poems/<id>/similar/` раз в секунду (до 30 попыток); при `ready` показывает
+  неблокирующее предупреждение «похоже на уже написанное», форму не блокирует.
+- Роутинг таска в очередь `embeddings` задан через `CELERY_TASK_ROUTES` в `config/settings.py`
+  и явный `queue=` при `apply_async`.
+- При импорте этапа 0 (`import_poems`, `TRUNCATE app_poem, app_collection`) или **смене модели эмбеддингов**
+  старые эмбеддинги становятся невалидными. Нужно заново заполнить корпус командой `backfill_embeddings`.
 
 ## Команды
 
@@ -47,6 +73,17 @@
 - Линт/формат: `uv run ruff check src` / `uv run ruff format src` (конфиг в `pyproject.toml`, line-length=120,
   select E,F,UP,B,SIM,I; ignore F401,F841).
 - Миграции: `uv run src/manage.py makemigrations <app>`.
+- Заполнение корпуса эмбеддингов: `uv run src/manage.py backfill_embeddings`
+  (опции `--author <id>`, `--batch <n>`). Запускать **на `embeddings-image`**
+  (где есть torch/sentence-transformers и модель), иначе `ImportError`.
+- Локальный воркер очереди `embeddings`: `make worker-embeddings`
+  (из корня; поднимает celery на очереди `embeddings`, concurrency 1, pool=solo,
+  кэш весов в `.model_cache`). Обычный воркер: `make worker` (очередь `celery`).
+- Калибровка порога `FENCE_SIMILARITY_THRESHOLD`: `uv run src/manage.py find_similar_pairs`
+  (опции `--author <id>`, `--neighbors`, `--top`, `--min`). Считает pairwise cosine-близость по всему
+  корпусу (по авторам) и выводит распределение по корзинам + топ-N самых похожих пар. Запускать
+  **на `embeddings-image`** (нужен только доступ к БД с эмбеддингами; torch не требуется, векторы
+  грузятся из pgvector).
 
 ## Git-коммиты
 

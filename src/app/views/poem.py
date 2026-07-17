@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db.models import Max, Q
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
@@ -13,6 +14,7 @@ from app.serializers import (
     PoemSerializer,
     PoemUpdateSerializer,
 )
+from app.tasks import embed_poem
 from app.utils.poem import derive_comment, derive_title, normalize_content
 
 
@@ -53,6 +55,8 @@ class PoemListCreateView(PoemBaseView):
             position=position,
             active=True,
         )
+
+        embed_poem.apply_async(args=[poem.id], queue=settings.EMBEDDING_QUEUE)
 
         return Response(PoemSerializer(poem).data, status=201)
 
@@ -113,12 +117,12 @@ class PoemStatsView(PoemBaseView):
 
 class PoemDetailView(PoemBaseView):
     @extend_schema(
-        methods=["PATCH"],
+        methods=["PUT"],
         request=PoemUpdateSerializer,
         responses=PoemSerializer,
         tags=["Poems"],
     )
-    def patch(self, request, pk: int):
+    def put(self, request, pk: int):
         poem = get_object_or_404(Poem, pk=pk, author=request.user)
 
         serializer = PoemUpdateSerializer(data=request.data, partial=True)
@@ -126,21 +130,12 @@ class PoemDetailView(PoemBaseView):
             raise InvalidFormError(serializer)
 
         validated = serializer.validated_data
-
-        content = poem.content
-        if "content" in validated:
-            content = normalize_content(validated["content"])
-            poem.content = content
-
-        if "title" in validated and validated["title"]:
-            poem.title = validated["title"]
-        else:
-            poem.title = derive_title(content, "")
-
-        if "comment" in validated and validated["comment"]:
-            poem.comment = validated["comment"]
-        else:
-            poem.comment = derive_comment("")
+        poem.content = normalize_content(validated["content"])
+        poem.title = derive_title(poem.content, validated.get("title"))
+        poem.comment = derive_comment(validated.get("comment"))
 
         poem.save()
+
+        embed_poem.apply_async(args=[poem.id], queue=settings.EMBEDDING_QUEUE)
+
         return Response(PoemSerializer(poem).data, status=200)

@@ -31,7 +31,13 @@ loaddata:
 	@$(MANAGE) loaddata admins schedules
 
 worker:
-	@cd src; uv run celery -A config worker -l INFO
+	@cd src; uv run celery -A config worker -Q celery -l INFO
+
+worker-embeddings:
+	@cd src; HF_HOME=./../.model_cache SENTENCE_TRANSFORMERS_HOME=./../.model_cache uv run celery -A config worker -Q embeddings -c 1 --pool=solo -l INFO
+
+backfill:
+	@cd src; HF_HOME=./../.model_cache SENTENCE_TRANSFORMERS_HOME=./../.model_cache uv run manage.py backfill_embeddings
 
 beat:
 	@cd src; uv run celery -A config beat -l INFO

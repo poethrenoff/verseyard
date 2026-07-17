@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.postgres",
     "rest_framework",
     "drf_spectacular",
     "django_celery_beat",
@@ -192,6 +193,12 @@ JWT_PUBLIC_KEY = os.getenv("JWT_PUBLIC_KEY")
 JWT_PASSPHRASE = os.getenv("JWT_PASSPHRASE")
 JWT_TOKEN_TTL = int(os.getenv("JWT_TOKEN_TTL", "3600"))
 
+REFRESH_TOKEN_EXPIRES = 7 * 24 * 60 * 60
+
+EMBEDDING_QUEUE = "embeddings"
+EMBEDDING_MODEL_NAME = "BAAI/bge-m3"
+FENCE_SIMILARITY_THRESHOLD = 0.76
+FENCE_SIMILARITY_LIMIT = 5
 
 # Celery Configuration Options
 CELERY_TIMEZONE = TIME_ZONE
@@ -204,6 +211,12 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_BROKER_CONNECTION_RETRY = True
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_WORKER_CANCEL_LONG_RUNNING_TASKS_ON_CONNECTION_LOSS = True
+
+# Route embedding tasks to a dedicated embeddings queue so they run only on
+# workers that have the ML dependencies installed (embeddings-image).
+CELERY_TASK_ROUTES = {
+    "app.tasks.embed_poem": {"queue": EMBEDDING_QUEUE},
+}
 
 LOGGING = {
     "version": 1,

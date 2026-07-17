@@ -222,3 +222,33 @@ body {
     font-size: 13px;
     color: var(--muted);
 }
+
+.fence-status {
+    color: var(--muted);
+    font-style: italic;
+    margin: 12px 0 0;
+}
+
+.fence-warning {
+    margin: 12px 0 0;
+    padding: 14px 18px;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    background: var(--card);
+}
+
+.fence-title {
+    margin: 0 0 8px;
+    font-weight: 600;
+}
+
+.fence-warning ul {
+    margin: 0 0 10px;
+    padding-left: 20px;
+}
+
+.fence-sim {
+    color: var(--muted);
+    font-size: 13px;
+}

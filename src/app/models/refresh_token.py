@@ -1,10 +1,9 @@
 import secrets
 from datetime import timedelta
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
-
-from app.settings import REFRESH_TOKEN_EXPIRES
 
 
 class RefreshTokenManager(models.Manager):
@@ -33,5 +32,5 @@ class RefreshToken(models.Model):
         while True:
             self.refresh_token = secrets.token_hex(64)
             if not RefreshToken.objects.filter(refresh_token=self.refresh_token).exists():
-                self.expired_at = timezone.now() + timedelta(seconds=REFRESH_TOKEN_EXPIRES)
+                self.expired_at = timezone.now() + timedelta(seconds=settings.REFRESH_TOKEN_EXPIRES)
                 break

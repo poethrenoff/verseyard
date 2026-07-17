@@ -4,6 +4,7 @@
 .kilo
 .venv
 .junie
+.model_cache
 .ruff_cache
 __pycache__
 docker-compose.yml

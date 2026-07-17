@@ -65,6 +65,24 @@
             </div>
         </form>
 
+        <template x-if="similarStatus === 'pending'">
+            <p class="fence-status">Забор проверяет похожие стихи…</p>
+        </template>
+        <template x-if="similarList.length > 0">
+            <div class="fence-warning">
+                <p class="fence-title">Похоже на уже написанное — но перелезть через Забор можно:</p>
+                <ul>
+                    <template x-for="item in similarList" :key="item.id">
+                        <li>
+                            <span x-text="(item.title && /^&quot;.+\.\.\.&quot;$/.test(item.title)) ? '* * *' : item.title"></span>
+                            <span class="fence-sim" x-text="' — ' + Math.round(item.similarity * 100) + '%'"></span>
+                        </li>
+                    </template>
+                </ul>
+                <button type="button" class="secondary" @click="dismissFence()">Закрыть</button>
+            </div>
+        </template>
+
         <div class="list">
             <template x-for="poem in poems" :key="poem.id">
                 <article class="card">
@@ -108,6 +126,11 @@ function app() {
         inCollection: 0,
         uncategorized: 0,
         dashboardLoaded: false,
+        similarStatus: null,
+        similarList: [],
+        similarError: "",
+        _similarTimer: null,
+        _similarAttempts: 0,
 
         init() {
             if (this.access) {
@@ -239,11 +262,13 @@ function app() {
                 this.poemError = data.error ? data.error.message : "Ошибка сохранения";
                 return;
             }
+            const data = await response.json();
             this.newContent = "";
             this.newTitle = "";
             this.newComment = "";
             this.loadPoems();
             this.loadDashboard();
+            this.pollSimilar(data.id);
         },
 
         startEdit(poem) {
@@ -266,8 +291,9 @@ function app() {
         async updatePoem() {
             this.poemError = "";
             this.saving = true;
+            const editedId = this.editingId;
             const response = await this.api("/api/poems/" + this.editingId + "/", {
-                method: "PATCH",
+                method: "PUT",
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({
                     content: this.newContent,
@@ -285,8 +311,46 @@ function app() {
             this.cancelEdit();
             this.loadPoems();
             this.loadDashboard();
+            this.pollSimilar(editedId);
         },
-    };
+
+        async pollSimilar(id) {
+            this.similarList = [];
+            this.similarError = "";
+            this.similarStatus = "pending";
+            this._similarAttempts = 0;
+            if (this._similarTimer) clearTimeout(this._similarTimer);
+
+            const tick = async () => {
+                this._similarAttempts += 1;
+                const response = await this.api("/api/poems/" + id + "/similar/", {
+                    headers: {"Content-Type": "application/json"},
+                });
+                if (!response || !response.ok) {
+                    this.similarStatus = null;
+                    return;
+                }
+                const data = await response.json();
+                if (data.status === "ready") {
+                    this.similarStatus = "ready";
+                    this.similarList = data.similar || [];
+                    this._similarTimer = null;
+                    return;
+                }
+                if (this._similarAttempts >= 30) {
+                    this.similarStatus = null;
+                    return;
+                }
+                this._similarTimer = setTimeout(tick, 1000);
+            };
+            tick();
+        },
+
+        dismissFence() {
+            this.similarList = [];
+            this.similarStatus = null;
+        },
+    }
 }
 </script>
 </body>

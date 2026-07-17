@@ -35,7 +35,9 @@
 - `POST /api/poems/`: Создание стиха. Реализован в `src/app/views/poem.py` (`PoemListCreateView.post`).
 - `GET /api/poems/stats/`: Статистика по активным стихам текущего автора. Реализован в `src/app/views/poem.py` (`PoemStatsView`).
 - `PUT /api/poems/<id>/`: Частичное обновление стиха (только автором). Реализован в `src/app/views/poem.py` (`PoemDetailView`).
-- `GET /api/poems/<id>/similar/`: Семантический антиповтор «Забор». Реализован в `src/app/views/fence.py` (`PoemSimilarView`).
+- `POST /api/poems/<id>/similar/`: Запуск асинхронной Celery-задачи `compute_poem_similarity`, возвращает `task_id`. Реализован в `src/app/views/fence.py` (`PoemSimilarView.post`).
+- `GET /api/tasks/<task_id>/`: Статус асинхронной задачи (`pending`/`ready`+`result`/`error`+`message`). Реализован в `src/app/views/task.py` (`TaskStatusView`).
+- Задача `compute_poem_similarity` (`src/app/tasks.py`): ждёт готовности эмбеддинга (retry `countdown=2`, до 15 раз), затем вызывает `find_similar`. Фронт (`index.html`) использует двухфазный flow POST→poll `GET /api/tasks/<task_id>/` (до 30 попыток).
 
 ## Архитектура «Забора» (семантический антиповтор, этап 2)
 
@@ -54,9 +56,10 @@
   `app.tasks.embed_poem` и команды `backfill_embeddings`).
 - Таск `embed_poem(poem_id)` ставится при `POST`/`PUT` стиха (`app/views/poem.py`) и идемпотентно
   пересчитывает вектор через `PoemEmbedding.update_or_create`.
-- Фронт (`templates/app/index.html`): после успешного создания/обновления опрашивает
-  `GET /api/poems/<id>/similar/` раз в секунду (до 30 попыток); при `ready` показывает
-  неблокирующее предупреждение «похоже на уже написанное», форму не блокирует.
+- Фронт (`templates/app/index.html`): после успешного создания/обновления шлёт
+  `POST /api/poems/<id>/similar/`, получает `task_id` и опрашивает `GET /api/tasks/<task_id>/`
+  раз в секунду (до 30 попыток); при `ready` показывает неблокирующее предупреждение
+  «похоже на уже написанное», форму не блокирует.
 - Роутинг таска в очередь `embeddings` задан через `CELERY_TASK_ROUTES` в `config/settings.py`
   и явный `queue=` при `apply_async`.
 - При импорте этапа 0 (`import_poems`, `TRUNCATE app_poem, app_collection`) или **смене модели эмбеддингов**

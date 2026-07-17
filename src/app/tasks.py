@@ -32,3 +32,22 @@ def embed_poem(poem_id: int) -> None:
         poem=poem,
         defaults={"vector": vector, "model_name": settings.EMBEDDING_MODEL_NAME},
     )
+
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    max_retries=15,
+    default_retry_delay=2,
+)
+def compute_poem_similarity(self, poem_id: int):
+    from app.models.poem import Poem
+    from app.models.poem_embedding import PoemEmbedding
+    from app.utils.fence import find_similar
+
+    poem = Poem.objects.get(id=poem_id)
+
+    if not PoemEmbedding.objects.filter(poem_id=poem.id).exists():
+        raise self.retry(exc=Exception("Embedding not ready"), countdown=2)
+
+    return find_similar(poem)

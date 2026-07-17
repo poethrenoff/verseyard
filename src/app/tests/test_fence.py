@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 from app.models.author import Author
 from app.models.poem import Poem
 from app.models.poem_embedding import PoemEmbedding
-from app.tasks import embed_poem
+from app.tasks import compute_poem_similarity, embed_poem
 from app.utils.jwt import jwt_encode
 
 
@@ -57,54 +57,71 @@ class FenceTest(TestCase):
             embed_poem.run(poem.id)
         self.assertEqual(PoemEmbedding.objects.filter(poem=poem).count(), 1)
 
-    def test_similar_endpoint_pending_without_embedding(self):
+    def test_start_similar_task_returns_task_id(self):
         self._auth(self.author)
         created = self.client.post(reverse("poem-list"), {"content": "fresh poem"}, format="json")
         pk = created.json()["id"]
-        response = self.client.get(reverse("poem-similar", args=[pk]))
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "pending", "similar": []})
 
-    def test_similar_endpoint_ready_filters_by_threshold_and_excludes_self(self):
-        self._auth(self.author)
-        target = Poem.objects.create(author=self.author, title="t", content="similar text", comment="", active=True)
-        similar = Poem.objects.create(author=self.author, title="s", content="similar text", comment="c", active=True)
-        dissimilar = Poem.objects.create(
-            author=self.author, title="d", content="dissimilar text", comment="", active=True
-        )
-        with patch("app.utils.fence.encode", side_effect=_fake_encode):
-            for poem in (target, similar, dissimilar):
-                embed_poem.run(poem.id)
+        response = self.client.post(reverse("poem-similar", args=[pk]))
+        self.assertEqual(response.status_code, 202)
+        body = response.json()
+        self.assertIn("task_id", body)
+        self.assertEqual(len(body["task_id"]), 36)
 
-        response = self.client.get(reverse("poem-similar", args=[target.id]))
-        data = response.json()
-        self.assertEqual(data["status"], "ready")
-        ids = [item["id"] for item in data["similar"]]
-        self.assertIn(similar.id, ids)
-        self.assertNotIn(dissimilar.id, ids)
-        self.assertNotIn(target.id, ids)
-        for item in data["similar"]:
-            self.assertGreaterEqual(item["similarity"], 0.5)
-
-    def test_similar_excludes_inactive_and_other_authors(self):
-        self._auth(self.author)
-        target = Poem.objects.create(author=self.author, title="t", content="similar text", comment="", active=True)
-        inactive = Poem.objects.create(author=self.author, title="i", content="similar text", comment="", active=False)
-        other_poem = Poem.objects.create(author=self.other, title="o", content="similar text", comment="", active=True)
-        with patch("app.utils.fence.encode", side_effect=_fake_encode):
-            for poem in (target, inactive, other_poem):
-                embed_poem.run(poem.id)
-
-        response = self.client.get(reverse("poem-similar", args=[target.id]))
-        ids = [item["id"] for item in response.json()["similar"]]
-        self.assertNotIn(inactive.id, ids)
-        self.assertNotIn(other_poem.id, ids)
-
-    def test_similar_isolation_404_for_other_author(self):
+    def test_post_similar_requires_authorship_404_for_other_author(self):
         self._auth(self.author)
         created = self.client.post(reverse("poem-list"), {"content": "mine"}, format="json")
         pk = created.json()["id"]
 
         self._auth(self.other)
-        response = self.client.get(reverse("poem-similar", args=[pk]))
+        response = self.client.post(reverse("poem-similar", args=[pk]))
         self.assertEqual(response.status_code, 404)
+
+    def test_task_status_pending_for_unstarted_task(self):
+        self._auth(self.author)
+        response = self.client.post(reverse("poem-list"), {"content": "fresh poem"}, format="json")
+        pk = response.json()["id"]
+
+        start = self.client.post(reverse("poem-similar", args=[pk]))
+        task_id = start.json()["task_id"]
+
+        status_response = self.client.get(reverse("task-status", args=[task_id]))
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(status_response.json()["status"], "pending")
+
+    def test_task_status_ready_returns_stored_result(self):
+        self._auth(self.author)
+        target = Poem.objects.create(author=self.author, title="t", content="similar text", comment="", active=True)
+        similar = Poem.objects.create(author=self.author, title="s", content="similar text", comment="c", active=True)
+        with patch("app.utils.fence.encode", side_effect=_fake_encode):
+            for poem in (target, similar):
+                embed_poem.run(poem.id)
+
+        expected = compute_poem_similarity.run(target.id)
+
+        from celery import current_app
+
+        backend = current_app.backend
+        task_id = "11111111-1111-1111-1111-111111111111"
+        backend.store_result(task_id, expected, "SUCCESS")
+
+        status_response = self.client.get(reverse("task-status", args=[task_id]))
+        data = status_response.json()
+        self.assertEqual(data["status"], "ready")
+        ids = [item["id"] for item in data["result"]]
+        self.assertIn(similar.id, ids)
+        self.assertNotIn(target.id, ids)
+
+    def test_task_status_error_returns_message(self):
+        self._auth(self.author)
+
+        from celery import current_app
+
+        backend = current_app.backend
+        task_id = "22222222-2222-2222-2222-222222222222"
+        backend.store_result(task_id, ValueError("embedding failed"), "FAILURE")
+
+        status_response = self.client.get(reverse("task-status", args=[task_id]))
+        data = status_response.json()
+        self.assertEqual(data["status"], "error")
+        self.assertEqual(data["message"], "embedding failed")

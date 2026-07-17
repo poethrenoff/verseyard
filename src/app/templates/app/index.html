@@ -74,7 +74,7 @@
                 <ul>
                     <template x-for="item in similarList" :key="item.id">
                         <li>
-                            <span x-text="(item.title && /^&quot;.+\.\.\.&quot;$/.test(item.title)) ? '* * *' : item.title"></span>
+                            <span x-text="item.id + '. ' + item.title"></span>
                             <span class="fence-sim" x-text="' — ' + Math.round(item.similarity * 100) + '%'"></span>
                         </li>
                     </template>
@@ -321,9 +321,24 @@ function app() {
             this._similarAttempts = 0;
             if (this._similarTimer) clearTimeout(this._similarTimer);
 
+            const startResponse = await this.api("/api/poems/" + id + "/similar/", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+            });
+            if (!startResponse || !startResponse.ok) {
+                this.similarStatus = null;
+                return;
+            }
+            const startData = await startResponse.json();
+            const taskId = startData.task_id;
+            if (!taskId) {
+                this.similarStatus = null;
+                return;
+            }
+
             const tick = async () => {
                 this._similarAttempts += 1;
-                const response = await this.api("/api/poems/" + id + "/similar/", {
+                const response = await this.api("/api/tasks/" + taskId + "/", {
                     headers: {"Content-Type": "application/json"},
                 });
                 if (!response || !response.ok) {
@@ -333,8 +348,12 @@ function app() {
                 const data = await response.json();
                 if (data.status === "ready") {
                     this.similarStatus = "ready";
-                    this.similarList = data.similar || [];
+                    this.similarList = data.result || [];
                     this._similarTimer = null;
+                    return;
+                }
+                if (data.status === "error") {
+                    this.similarStatus = null;
                     return;
                 }
                 if (this._similarAttempts >= 30) {

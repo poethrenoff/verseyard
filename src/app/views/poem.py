@@ -75,7 +75,7 @@ class PoemListCreateView(PoemBaseView):
         validated = query_serializer.validated_data
         collection = validated["collection"]
 
-        poems = Poem.objects.filter(author=request.user, collection=collection)
+        poems = Poem.objects.filter(author=request.user, collection=collection).select_related("assessment")
 
         query = validated["query"]
         if query:

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Участок</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/main.css?v=3">
     <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 </head>
 <body>
@@ -23,24 +23,52 @@
     <!-- DASHBOARD PANEL -->
     <template x-if="access">
         <aside class="dashboard-panel" x-show="dashboardLoaded">
-            <div class="dash-stat">
-                <span class="dash-value" x-text="inCollection"></span>
-                <span class="dash-label">в коллекции</span>
-            </div>
-            <div class="dash-stat">
-                <span class="dash-value" x-text="uncategorized"></span>
-                <span class="dash-label">вне коллекций</span>
-            </div>
-            <div class="dash-stat">
-                <span class="dash-value" x-text="remaining"></span>
-                <span class="dash-label">осталось до 100 000</span>
-            </div>
-            <template x-if="avgScores">
+            <div class="dash-row dash-row-main">
                 <div class="dash-stat">
-                    <span class="dash-value" x-text="(avgScores.freshness ?? 0).toFixed(1)"></span>
-                    <span class="dash-label">средняя свежесть</span>
+                    <span class="dash-value" x-text="inCollection"></span>
+                    <span class="dash-label">в коллекции</span>
                 </div>
-            </template>
+                <div class="dash-stat">
+                    <span class="dash-value" x-text="uncategorized"></span>
+                    <span class="dash-label">вне коллекций</span>
+                </div>
+                <div class="dash-stat">
+                    <span class="dash-value" x-text="remaining"></span>
+                    <span class="dash-label">осталось до 100 000</span>
+                </div>
+            </div>
+            <div class="dash-row dash-row-scores">
+                <template x-if="avgScores">
+                    <div class="dash-stat">
+                        <span class="dash-value" x-text="(avgScores.freshness ?? 0).toFixed(1)"></span>
+                        <span class="dash-label">средняя<br>свежесть</span>
+                    </div>
+                </template>
+                <template x-if="avgScores">
+                    <div class="dash-stat">
+                        <span class="dash-value" x-text="(avgScores.emotional_density ?? 0).toFixed(1)"></span>
+                        <span class="dash-label">средняя<br>эмоц. плотность</span>
+                    </div>
+                </template>
+                <template x-if="avgScores">
+                    <div class="dash-stat">
+                        <span class="dash-value" x-text="(avgScores.voice ?? 0).toFixed(1)"></span>
+                        <span class="dash-label">средний<br>голос</span>
+                    </div>
+                </template>
+                <template x-if="avgScores">
+                    <div class="dash-stat">
+                        <span class="dash-value" x-text="(avgScores.completeness ?? 0).toFixed(1)"></span>
+                        <span class="dash-label">средняя завершённость</span>
+                    </div>
+                </template>
+                <template x-if="avgScores">
+                    <div class="dash-stat">
+                        <span class="dash-value" x-text="(avgScores.anti_repeat ?? 0).toFixed(1)"></span>
+                        <span class="dash-label">средний анти-повтор</span>
+                    </div>
+                </template>
+            </div>
         </aside>
     </template>
 
@@ -110,6 +138,23 @@
         <div class="list">
             <template x-for="poem in poems" :key="poem.id">
                 <article class="card">
+                    <template x-if="poem.assessment">
+                        <div class="assess-wrap">
+                            <span class="assess-icon">★</span>
+                            <div class="assess-tooltip">
+                                <p class="assess-title">Оценка стиха:</p>
+                                <ul class="assess-scores">
+                                    <li><span>Свежесть образа: </span><b x-text="poem.assessment.freshness ?? '—'"></b></li>
+                                    <li><span>Эмоциональная плотность: </span><b x-text="poem.assessment.emotional_density ?? '—'"></b></li>
+                                    <li><span>Голос: </span><b x-text="poem.assessment.voice ?? '—'"></b></li>
+                                    <li><span>Завершённость: </span><b x-text="poem.assessment.completeness ?? '—'"></b></li>
+                                    <li><span>Анти-повтор: </span><b x-text="poem.assessment.anti_repeat ?? '—'"></b></li>
+                                </ul>
+                                <p class="assess-comment" x-text="poem.assessment.comment" x-show="poem.assessment.comment"></p>
+                                <p class="assess-model" x-text="'Модель: ' + poem.assessment.model_name" x-show="poem.assessment.model_name"></p>
+                            </div>
+                        </div>
+                    </template>
                     <h2 x-text="poem.title && /^&quot;.+\.\.\.&quot;$/.test(poem.title) ? '* * *' : poem.title"></h2>
                     <pre x-text="poem.content"></pre>
                     <p class="comment" x-text="poem.comment"></p>

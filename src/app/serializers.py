@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from app.models.assessment import PoemAssessment
 from app.models.author import Author
 from app.models.poem import Poem
 
@@ -40,7 +41,23 @@ class PoemListQuerySerializer(serializers.Serializer):
     query = serializers.CharField(required=False, allow_blank=True, default="")
 
 
+class PoemAssessmentNestedSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PoemAssessment
+        fields = [
+            "freshness",
+            "emotional_density",
+            "voice",
+            "completeness",
+            "anti_repeat",
+            "comment",
+            "model_name",
+        ]
+
+
 class PoemSerializer(serializers.ModelSerializer):
+    assessment = PoemAssessmentNestedSerializer(read_only=True)
+
     class Meta:
         model = Poem
         fields = [
@@ -48,4 +65,5 @@ class PoemSerializer(serializers.ModelSerializer):
             "title",
             "content",
             "comment",
+            "assessment",
         ]

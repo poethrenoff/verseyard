@@ -117,6 +117,12 @@
   `LLM_MODEL_NAME` (см. `.env.dist`). Таск `assess_poem` идёт в обычную очередь `celery`
   (воркер `make worker`); внешний LLM-API должен быть OpenAI-совместимым. Для A/B моделей
   меняйте только `LLM_MODEL_NAME` (напр. через OpenRouter).
+- Массовая переоценка стихов (этап 3): `uv run src/manage.py backfill_assessments`
+  (опции `--author <id>`, `--batch <n>`, `--only-missing`, `--rate-limit <sec>`, `--max-retries <n>`).
+  Проставляет `PoemAssessment` всем активным стихам через LLM. Соблюдает лимит LLM (минимальная пауза
+  `--rate-limit` между запросами) и адекватно реагирует на 429: читает `Retry-After` из заголовков,
+  делает exponential-паузу и повторяет до `--max-retries`, после чего пропускает стих. Запускать
+  с настроенными `LLM_API_URL`/`LLM_API_KEY`/`LLM_MODEL_NAME` (на обычном образе, без `embeddings-image`).
 - Калибровка порога `SIMILARITY_THRESHOLD`: `uv run src/manage.py find_similar_pairs`
   (опции `--author <id>`, `--neighbors`, `--top`, `--min`). Считает pairwise cosine-близость по всему
   корпусу (по авторам) и выводит распределение по корзинам + топ-N самых похожих пар. Запускать

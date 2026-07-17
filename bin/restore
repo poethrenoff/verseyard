@@ -8,15 +8,14 @@ fi
 
 BACKUP_DIR="$1"
 
-BACKUP_FILE="$(ls -1t "$BACKUP_DIR"/*.sql 2>/dev/null | head -n1 || true)"
+BACKUP_FILE="$(ls -1t "$BACKUP_DIR"/*.sql.gz 2>/dev/null | head -n1 || true)"
 if [ -z "$BACKUP_FILE" ]; then
   echo "В каталоге '$BACKUP_DIR' бэкапы не найдены."
   exit 1
 fi
 
 echo "Восстановление БД из $BACKUP_FILE ..."
-docker compose exec -T db \
-  psql --username=verseyard --dbname=verseyard \
-  < "$BACKUP_FILE"
+gunzip -c "$BACKUP_FILE" | docker compose exec -T db \
+  psql --username=verseyard --dbname=verseyard
 
 echo "Готово."
